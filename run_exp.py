@@ -53,7 +53,7 @@ def main(args):
 
     trainer = Trainer(vae, "vae", 32, 1e-4, 10, patience=50, reduce_lr=False)
 
-    trainer.train(X_train, X_test, 120, kld_lag=20, save_prefix=str(savedir) + "/")
+    trainer.train(X_train, X_test, 120, kld_lag=20, kld_warmup=10, save_prefix=str(savedir) + "/")
 
     print("Done!")
 

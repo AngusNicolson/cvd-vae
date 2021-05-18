@@ -32,8 +32,9 @@ class Trainer:
         self.loss_history_train = []
         self.recon_loss_history_train = []
         self.kld_loss_history_train = []
+        self.weighted_kld_loss_history_train = []
 
-    def train(self, X_train, X_test, num_epoch, kld_lag=0, verbose=1, save_prefix=""):
+    def train(self, X_train, X_test, num_epoch, kld_lag=0, kld_warmup=0, verbose=1, save_prefix=""):
         savedir = f"{save_prefix}{self.savedir}"
         writer = SummaryWriter(savedir)
         iters = 0
@@ -44,23 +45,29 @@ class Trainer:
             losses = []
             recon_losses = []
             kld_losses = []
+            weighted_kld_losses = []
 
             if epoch < kld_lag:
-                use_kld = False
+                kld_weight = 0.0
             else:
-                use_kld = True
+                if kld_warmup == 0:
+                    kld_weight = 1.0
+                else:
+                    kld_weight = min((1 + epoch - kld_lag) / kld_warmup, 1.0)
+
             for x, _ in dataloader:
                 x = x.to(device)
                 self.model.zero_grad()
                 output, latent, mean, log_var = self.model(x)
-                loss, reconstruction_loss, kld = self.loss_fn(x, output, latent, mean, log_var, use_kld)
+                loss, reconstruction_loss, kld, weighted_kld = self.loss_fn(x, output, latent, mean, log_var, kld_weight)
                 loss.backward()
                 self.optimizer.step()
 
                 # Logging -- track train loss
                 losses.append(loss.item())
-                recon_losses.append(reconstruction_loss.mean().item())
-                kld_losses.append(kld.mean().item())
+                recon_losses.append(reconstruction_loss.item())
+                kld_losses.append(kld.item())
+                weighted_kld_losses.append(weighted_kld.item())
 
                 iters += x.shape[0]
                 writer.add_scalar("iter_loss/all/train", losses[-1], iters)
@@ -71,7 +78,7 @@ class Trainer:
             #       Evaluate performance at the end of each epoch
             # --------------------------------------------------------
 
-            test_metrics = self.evaluate_model(X_test, use_kld)
+            test_metrics = self.evaluate_model(X_test, kld_weight)
             self.loss_history.append(test_metrics["loss"])
             if self.reduce_lr:
                 self.scheduler.step(test_metrics["loss"])
@@ -80,6 +87,7 @@ class Trainer:
             self.loss_history_train.append(np.mean(losses))
             self.recon_loss_history_train.append(np.mean(recon_losses))
             self.kld_loss_history_train.append(np.mean(kld_losses))
+            self.weighted_kld_loss_history_train.append(np.mean(weighted_kld_losses))
 
             param_grp = next(iter(self.optimizer.param_groups))
             writer.add_scalar("lr", param_grp["lr"], epoch)
@@ -87,10 +95,12 @@ class Trainer:
             writer.add_scalar("epoch_loss/all/train", self.loss_history_train[-1], epoch)
             writer.add_scalar("epoch_loss/recon/train", self.recon_loss_history_train[-1], epoch)
             writer.add_scalar("epoch_loss/kld/train", self.kld_loss_history_train[-1], epoch)
+            writer.add_scalar("epoch_loss/weighted_kld/train", self.weighted_kld_loss_history_train[-1], epoch)
 
             writer.add_scalar("epoch_loss/all/val", test_metrics['loss'], epoch)
             writer.add_scalar("epoch_loss/recon/val", test_metrics['recon_loss'], epoch)
             writer.add_scalar("epoch_loss/kld/val", test_metrics['kld_loss'], epoch)
+            writer.add_scalar("epoch_loss/weighted_kld/val", test_metrics['weighted_kld_loss'], epoch)
             writer.add_scalar("mae/val", test_metrics['mae'], epoch)
 
             writer.add_histogram("means/bias", self.model.encoder.mean_model.bias, epoch)
@@ -138,7 +148,7 @@ class Trainer:
         outputs = [torch.cat(out_list) for out_list in outputs]
         return outputs
 
-    def evaluate_model(self, x, use_kld=True):
+    def evaluate_model(self, x, kld_weight=1.0):
         output, latent, mean, log_var = self.forward_by_batches(x)
 
         x = x.astype('f4')  # PyTorch defaults to float32
@@ -146,29 +156,30 @@ class Trainer:
         x = torch.from_numpy(x).to(device)
 
         # scores
-        loss, recon_loss, kld_loss = self.loss_fn(x, output, latent, mean, log_var, use_kld)
+        loss, recon_loss, kld_loss, weighted_kld = self.loss_fn(x, output, latent, mean, log_var, kld_weight)
 
         mae = F.l1_loss(x, output).item()
         mse = F.mse_loss(x, output).item()
 
         out_metrics = {
-            'loss': loss,
-            "recon_loss": recon_loss.mean(),
-            "kld_loss": kld_loss.mean(),
+            'loss': loss.item(),
+            "recon_loss": recon_loss.item(),
+            "kld_loss": kld_loss.item(),
+            "weighted_kld_loss": weighted_kld.item(),
             "output": output.cpu().numpy(),
             "mae": mae,
             "mse": mse,
         }
         return out_metrics
 
-    def loss_fn(self, x, x_hat, latent, mean, log_var, use_kld=True):
+    def loss_fn(self, x, x_hat, latent, mean, log_var, kld_weight=1.0):
         reconstruction_loss = F.mse_loss(x_hat, x, reduction='mean')
         kld = - self.c * 0.5 * torch.mean(1 + log_var - mean.pow(2) - log_var.exp())
-        if use_kld:
-            loss = reconstruction_loss + kld
-        else:
-            loss = reconstruction_loss
-        return loss, reconstruction_loss, kld
+        weighted_kld = kld * kld_weight
+
+        loss = reconstruction_loss + weighted_kld
+
+        return loss, reconstruction_loss, kld, weighted_kld
 
     def plot_example(self, x, mean=False):
         self.model.eval()
