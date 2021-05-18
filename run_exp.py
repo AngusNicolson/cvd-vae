@@ -30,7 +30,7 @@ def main(args):
 
     nyq_rate = 500/2  # 500 Hz data
     filter_size = 251
-    ecg_size = 2048
+    ecg_size = 512
     latent_size = 16
 
     fir_filter = firwin(filter_size, [3/nyq_rate, 45/nyq_rate], pass_zero="bandpass")
