@@ -37,7 +37,15 @@ def main(args):
     latent_size = config["latent_size"]
     # Bottleneck: 2048, BasicBlock: 512 (512*block.expansion)
     encoder = Encoder(encoder_resnet, nn.Linear(512, latent_size), nn.Linear(512, latent_size))
-    decoder = ResNetDecoder(DecoderBlock, [2, 2, 2, 2], latent_size, out_channels=12)
+    decoder = ResNetDecoder(
+        DecoderBlock,
+        [2, 2, 2, 2],
+        latent_size,
+        out_channels=12,
+        conv1_scale=config["conv1_scale"],
+        conv2_scale=config["conv2_scale"],
+        initial_size=config["initial_size"]
+    )
     vae = VAE(encoder, decoder).to(device)
 
     savedir = Path(args.out_dir)
