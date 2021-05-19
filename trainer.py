@@ -39,7 +39,7 @@ class Trainer:
         writer = SummaryWriter(savedir)
         iters = 0
         for epoch in range(num_epoch):
-            self.model.train()
+
             t0 = time.time()
             dataloader = self.create_dataloader(X_train, X_train, self.batch_size, shuffle=True)
             losses = []
