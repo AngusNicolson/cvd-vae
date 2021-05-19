@@ -53,7 +53,9 @@ def main(args):
 
     trainer = Trainer(vae, "vae", 32, 1e-4, config["kld_importance"], patience=50, reduce_lr=False)
 
-    with open(f"{str(savedir)}/{trainer.savedir}/config.json", "w") as fp:
+    train_dir = f"{str(savedir)}/{trainer.savedir}"
+    Path(train_dir).mkdir(exist_ok=True)
+    with open(f"{train_dir}/config.json", "w") as fp:
         json.dump(config, fp, indent=2)
 
     trainer.train(X_train, X_test, config["epochs"], kld_lag=config["kld_lag"], kld_warmup=config["kld_warmup"], save_prefix=str(savedir) + "/")
