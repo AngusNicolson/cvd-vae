@@ -1,0 +1,8 @@
+
+{
+  "epochs": 120,
+  "ecg_size": 512,
+  "latent_size": 16,
+  "kld_lag": 25,
+  "kld_warmup": 10
+}
