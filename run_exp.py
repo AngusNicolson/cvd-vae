@@ -14,7 +14,7 @@ from scipy.signal import firwin, lfilter
 import torch
 import torch.nn as nn
 
-from utils import device
+from utils import device, clean_ecg
 from pytorch_models import ResNet, ResNetDecoder, BasicBlock, DecoderBlock
 from trainer import Trainer
 from models import VAE, Encoder
@@ -28,16 +28,12 @@ def main(args):
     directory = Path(args.in_dir)
     strip_data = np.load(str(directory / "rest_ECG_strip.npy"))
 
-    nyq_rate = 500/2  # 500 Hz data
-    filter_size = 251
     ecg_size = 512
     latent_size = 16
 
-    fir_filter = firwin(filter_size, [3/nyq_rate, 45/nyq_rate], pass_zero="bandpass")
-    lead_order = ['I', 'II', 'III', 'aVR', 'aVL', 'aVF', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6']
-    filtered_strip_data = lfilter(fir_filter, 1, strip_data, axis=1)
+    filtered_strip_data = clean_ecg(strip_data, filter_size=251, thresh=800)
 
-    strip_data_shortened = filtered_strip_data[:, filter_size:filter_size+ecg_size, :]
+    strip_data_shortened = filtered_strip_data[:, :ecg_size, :]
 
     X_train, X_test, _, _ = train_test_split(
         strip_data_shortened, strip_data_shortened, test_size=0.3, shuffle=False)
