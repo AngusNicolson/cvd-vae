@@ -433,7 +433,10 @@ class ResNetDecoder(nn.Module):
         width_per_group: int = 64,
         replace_stride_with_dilation: Optional[List[bool]] = None,
         norm_layer: Optional[Callable[..., nn.Module]] = None,
-        out_channels: int = 12
+        out_channels: int = 12,
+        conv1_scale: int = 1,
+        conv2_scale: int = 4,
+        initial_size: int = 16,
     ) -> None:
         super(ResNetDecoder, self).__init__()
         if norm_layer is None:
@@ -443,8 +446,9 @@ class ResNetDecoder(nn.Module):
         self.expansion = block.expansion
         self.inplanes = 512 * block.expansion
         self.dilation = 1
-        self.upscale_factor = 4
-        self.initial_size = 16
+        self.conv1_scale = conv1_scale
+        self.conv2_scale = conv2_scale
+        self.initial_size = initial_size
 
         if replace_stride_with_dilation is None:
             # each element in the tuple indicates if we should replace
@@ -456,14 +460,14 @@ class ResNetDecoder(nn.Module):
         self.groups = groups
         self.base_width = width_per_group
         self.linear = nn.Linear(latent_dim, self.inplanes * self.initial_size)
-        self.conv1 = resize_conv1x1(self.inplanes, self.inplanes, scale=1)
+        self.conv1 = resize_conv1x1(self.inplanes, self.inplanes, scale=self.conv1_scale)
 
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], scale=2)
         self.layer3 = self._make_layer(block, 256, layers[2], scale=2)
         self.layer4 = self._make_layer(block, 512, layers[3], scale=2)
 
-        self.conv2 = resize_conv3x3(512*self.expansion, out_channels, self.upscale_factor)
+        self.conv2 = resize_conv3x3(512*self.expansion, out_channels, self.conv2_scale)
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
