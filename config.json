@@ -1,10 +1,10 @@
 
 {
   "epochs": 120,
-  "ecg_size": 512,
-  "conv1_scale": 1,
+  "ecg_size": 1024,
+  "conv1_scale": 2,
   "conv2_scale": 4,
-  "start_size": 16,
+  "initial_size": 16,
   "latent_size": 16,
   "kld_lag": 25,
   "kld_warmup": 10
