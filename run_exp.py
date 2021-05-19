@@ -51,7 +51,7 @@ def main(args):
     savedir = Path(args.out_dir)
     savedir.mkdir(exist_ok=True)
 
-    trainer = Trainer(vae, "vae", 32, 1e-4, 10, patience=50, reduce_lr=False)
+    trainer = Trainer(vae, "vae", 32, 1e-4, config["kld_importance"], patience=50, reduce_lr=False)
 
     trainer.train(X_train, X_test, config["epochs"], kld_lag=config["kld_lag"], kld_warmup=config["kld_warmup"], save_prefix=str(savedir) + "/")
 

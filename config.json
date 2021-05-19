@@ -7,5 +7,6 @@
   "initial_size": 16,
   "latent_size": 16,
   "kld_lag": 25,
-  "kld_warmup": 10
+  "kld_warmup": 10,
+  "kld_importance": 10
 }
