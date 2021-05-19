@@ -103,6 +103,12 @@ class Trainer:
             writer.add_scalar("epoch_loss/weighted_kld/val", test_metrics['weighted_kld_loss'], epoch)
             writer.add_scalar("mae/val", test_metrics['mae'], epoch)
 
+            writer.add_histogram("activity", test_metrics["activity"], epoch)
+            writer.add_scalar("activity/n", test_metrics["n_active"], epoch)
+            writer.add_scalar("activity/proportion",
+                              test_metrics["n_active"]/self.model.encoder.mean_model.weight.shape[0],
+                              epoch)
+
             writer.add_histogram("means/bias", self.model.encoder.mean_model.bias, epoch)
             writer.add_histogram("means/weight", self.model.encoder.mean_model.weight, epoch)
             writer.add_histogram("logvar/bias", self.model.encoder.var_model.bias, epoch)
@@ -151,6 +157,9 @@ class Trainer:
     def evaluate_model(self, x, kld_weight=1.0):
         output, latent, mean, log_var = self.forward_by_batches(x)
 
+        activity = np.diag(np.cov(mean.cpu().numpy().T))
+        n_active = (activity > 0.01).sum()
+
         x = x.astype('f4')  # PyTorch defaults to float32
         x = np.transpose(x, (0, 2, 1))  # channels first: (N,M,3) -> (N,3,M). PyTorch uses channel first format
         x = torch.from_numpy(x).to(device)
@@ -169,6 +178,8 @@ class Trainer:
             "output": output.cpu().numpy(),
             "mae": mae,
             "mse": mse,
+            "activity": activity,
+            "n_active": n_active
         }
         return out_metrics
 
