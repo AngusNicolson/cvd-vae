@@ -1,12 +1,22 @@
 
 {
+  "trainer": {
+    "lr": 1e-4,
+    "batch_size": 32,
+    "patience": 50,
+    "reduce_lr": false,
+    "c": 10
+  },
+  "train": {
+    "kld_lag": 25,
+    "kld_warmup": 10
+  },
+  "decoder": {
+    "initial_size": 16,
+    "conv1_scale": 2,
+    "conv2_scale": 4
+  },
   "epochs": 120,
   "ecg_size": 1024,
-  "conv1_scale": 2,
-  "conv2_scale": 4,
-  "initial_size": 16,
-  "latent_size": 16,
-  "kld_lag": 25,
-  "kld_warmup": 10,
-  "kld_importance": 10
+  "latent_size": 16
 }

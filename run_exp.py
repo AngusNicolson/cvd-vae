@@ -42,23 +42,21 @@ def main(args):
         [2, 2, 2, 2],
         latent_size,
         out_channels=12,
-        conv1_scale=config["conv1_scale"],
-        conv2_scale=config["conv2_scale"],
-        initial_size=config["initial_size"]
+        **config["decoder"]
     )
     vae = VAE(encoder, decoder).to(device)
 
     savedir = Path(args.out_dir)
     savedir.mkdir(exist_ok=True)
 
-    trainer = Trainer(vae, "vae", 32, 1e-4, config["kld_importance"], patience=50, reduce_lr=False)
+    trainer = Trainer(vae, "vae", **config["trainer"])
 
     train_dir = f"{str(savedir)}/{trainer.savedir}"
     Path(train_dir).mkdir(exist_ok=True)
     with open(f"{train_dir}/config.json", "w") as fp:
         json.dump(config, fp, indent=2)
 
-    trainer.train(X_train, X_test, config["epochs"], kld_lag=config["kld_lag"], kld_warmup=config["kld_warmup"], save_prefix=str(savedir) + "/")
+    trainer.train(X_train, X_test, config["epochs"], save_prefix=str(savedir) + "/", **config["train"])
 
     print("Done!")
 
