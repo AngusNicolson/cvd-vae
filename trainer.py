@@ -53,7 +53,7 @@ class Trainer:
                 if kld_warmup == 0:
                     kld_weight = 1.0
                 else:
-                    kld_weight = min((1 + epoch - kld_lag) / kld_warmup, 1.0)
+                    kld_weight = min(((1 + epoch - kld_lag)/kld_warmup)**4, 1.0)
 
             for x, _ in dataloader:
                 x = x.to(device)
