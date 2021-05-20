@@ -10,8 +10,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import random_split
 
 from utils import device
+from dataset import DataLoader
 
 
 class Trainer:
@@ -34,14 +36,18 @@ class Trainer:
         self.kld_loss_history_train = []
         self.weighted_kld_loss_history_train = []
 
-    def train(self, X_train, X_test, num_epoch, kld_lag=0, kld_warmup=0, verbose=1, save_prefix=""):
+    def train(self, dataset, num_epoch, kld_lag=0, kld_warmup=0, verbose=1, val_split=0.3, save_prefix=""):
         savedir = f"{save_prefix}{self.savedir}"
         writer = SummaryWriter(savedir)
         iters = 0
+
+        val_size = int(val_split * len(dataset))
+        train_size = len(dataset) - val_size
+        train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
         for epoch in range(num_epoch):
 
             t0 = time.time()
-            dataloader = self.create_dataloader(X_train, X_train, self.batch_size, shuffle=True)
+            dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
             losses = []
             recon_losses = []
             kld_losses = []
@@ -55,7 +61,8 @@ class Trainer:
                 else:
                     kld_weight = min(((1 + epoch - kld_lag)/kld_warmup)**4, 1.0)
 
-            for x, _ in dataloader:
+            for sample in dataloader:
+                x = sample["ecg"]
                 x = x.to(device)
                 self.model.zero_grad()
                 output, latent, mean, log_var = self.model(x)
@@ -78,7 +85,7 @@ class Trainer:
             #       Evaluate performance at the end of each epoch
             # --------------------------------------------------------
 
-            test_metrics = self.evaluate_model(X_test, kld_weight)
+            test_metrics = self.evaluate_model(val_dataset, kld_weight)
             self.loss_history.append(test_metrics["loss"])
             if self.reduce_lr:
                 self.scheduler.step(test_metrics["loss"])
@@ -118,16 +125,16 @@ class Trainer:
             #writer.add_histogram("decoder.conv1/weight", self.model.decoder.conv1[1].weight, epoch)
             writer.add_histogram("decoder.conv2/weight", self.model.decoder.conv2[1].weight, epoch)
 
-            fig = self.plot_example(X_test[2])
+            fig = self.plot_example(val_dataset, 2)
             writer.add_figure("example/test", fig, epoch)
 
-            fig = self.plot_example(X_test[2], True)
+            fig = self.plot_example(val_dataset, 2, True)
             writer.add_figure("example/test_mean", fig, epoch)
 
-            fig = self.plot_example(X_train[2])
+            fig = self.plot_example(val_dataset, 2)
             writer.add_figure("example/train", fig, epoch)
 
-            fig = self.plot_example(X_train[2], True)
+            fig = self.plot_example(val_dataset, 2, True)
             writer.add_figure("example/train_mean", fig, epoch)
 
             if (epoch + 1) % 10 == 0:
@@ -137,32 +144,33 @@ class Trainer:
             if verbose == 1:
                 print(f"Epoch {epoch}: Train Loss {self.loss_history_train[-1]}  Test Loss {test_metrics['loss']}  {(t1 - t0):.0f} seconds")
 
-    def forward_by_batches(self, X):
+    def forward_by_batches(self, dataset):
         """ Forward pass model on a dataset.
         Do this by batches so that we don't blow up the memory. """
         outputs = [[] for i in range(4)]
-
+        xs = []
+        dataloader = DataLoader(dataset, 64, False)
         self.model.eval()
         with torch.no_grad():
-            for x in self.create_dataloader(X, batch_size=64, shuffle=False):  # do not shuffle here!
+            for sample in dataloader:  # do not shuffle here!
+                x = sample["ecg"]
                 x = x.to(device)
                 out = self.model(x)
                 for i in range(4):
                     outputs[i].append(out[i])
+                xs.append(x)
         self.model.train()
 
         outputs = [torch.cat(out_list) for out_list in outputs]
-        return outputs
+        x = torch.cat(xs)
+        return [x, *outputs]
 
-    def evaluate_model(self, x, kld_weight=1.0):
-        output, latent, mean, log_var = self.forward_by_batches(x)
+    def evaluate_model(self, dataset, kld_weight=1.0):
+
+        x, output, latent, mean, log_var = self.forward_by_batches(dataset)
 
         activity = np.diag(np.cov(mean.cpu().numpy().T))
         n_active = (activity > 0.01).sum()
-
-        x = x.astype('f4')  # PyTorch defaults to float32
-        x = np.transpose(x, (0, 2, 1))  # channels first: (N,M,3) -> (N,3,M). PyTorch uses channel first format
-        x = torch.from_numpy(x).to(device)
 
         # scores
         loss, recon_loss, kld_loss, weighted_kld = self.loss_fn(x, output, latent, mean, log_var, kld_weight)
@@ -192,44 +200,27 @@ class Trainer:
 
         return loss, reconstruction_loss, kld, weighted_kld
 
-    def plot_example(self, x, mean=False):
+    def plot_example(self, dataset, idx, mean=False):
+        sample = dataset[idx]
+        x = sample["ecg"]
+        x_torch = torch.from_numpy(np.expand_dims(x, 0)).to(device)
         self.model.eval()
+
         fig, axes = plt.subplots(4, 3, figsize=(15, 12))
         X_examples = []
-        for j in range(5):
-            X_examples.append(self.forward_by_batches(np.expand_dims(x, 0))[0].cpu().numpy())
+        with torch.no_grad():
+            for j in range(5):
+                X_examples.append(self.model(x_torch)[0].cpu().numpy())
 
-        X_means = self.model.decoder(
-            self.forward_by_batches(np.expand_dims(x, 0))[1]).detach().cpu().numpy()
+            X_means = self.model.decoder(self.model(x_torch)[1]).cpu().numpy()
         for i, ax in enumerate(axes.flatten()):
             for j in range(5):
                 ax.plot(X_examples[j][0, i], color="grey", alpha=0.3, linewidth=2)
-            ax.plot(x[:, i], color="red", label="gt", alpha=0.9)
+            ax.plot(x[i, :], color="red", label="gt", alpha=0.9)
             if mean:
                 ax.plot(X_means[0, i, :], color="black", label="recon")
 
         plt.tight_layout()
         self.model.train()
         return fig
-    
-    @staticmethod
-    def create_dataloader(X, y=None, batch_size=1, shuffle=False):
-        """ Create a (batch) iterator over the dataset. Alternatively, use PyTorch's
-        Dataset and DataLoader classes -- See
-        https://pytorch.org/tutorials/beginner/data_loading_tutorial.html """
-        if shuffle:
-            idxs = np.random.permutation(np.arange(len(X)))
-        else:
-            idxs = np.arange(len(X))
-        for i in range(0, len(idxs), batch_size):
-            idxs_batch = idxs[i:i+batch_size]
-            X_batch = X[idxs_batch].astype('f4')  # PyTorch defaults to float32
-            X_batch = np.transpose(X_batch, (0, 2, 1))
-            X_batch = torch.from_numpy(X_batch)
-            if y is None:
-                yield X_batch
-            else:
-                y_batch = y[idxs_batch]
-                y_batch = torch.from_numpy(y_batch).float()
-                yield X_batch, y_batch
 
