@@ -95,7 +95,7 @@ class Trainer:
             #       Evaluate performance at the end of each epoch
             # --------------------------------------------------------
 
-            test_metrics = self.evaluate_model(val_dataset, kld_weight)
+            test_metrics = self.evaluate_model(val_dataset, kld_weight, supervised_weight)
             if self.reduce_lr:
                 self.scheduler.step(test_metrics["loss"])
 
