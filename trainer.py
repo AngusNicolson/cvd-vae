@@ -47,7 +47,7 @@ class Trainer:
         for epoch in range(num_epoch):
 
             t0 = time.time()
-            dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
+            dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=3)
             losses = []
             recon_losses = []
             kld_losses = []
@@ -149,7 +149,7 @@ class Trainer:
         Do this by batches so that we don't blow up the memory. """
         outputs = [[] for i in range(4)]
         xs = []
-        dataloader = DataLoader(dataset, 64, False)
+        dataloader = DataLoader(dataset, 64, False, num_workers=3)
         self.model.eval()
         with torch.no_grad():
             for sample in dataloader:  # do not shuffle here!
