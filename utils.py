@@ -60,10 +60,12 @@ def split_dataset(dataset, val_split=0.3):
     train_size = len(dataset) - val_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
+    train_dataset.dataset.load_ecg = False
     # Calculate std and mean of training set to scale data
     data = np.zeros((len(train_dataset), 8))
     for i in range(len(train_dataset)):
         data[i] = train_dataset[i]["measures"]
+    train_dataset.dataset.load_ecg = True
 
     std = np.nanstd(data, axis=0)
     mean = np.nanmean(data, axis=0)

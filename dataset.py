@@ -14,7 +14,7 @@ from torchvision.transforms import Compose
 class ECGDataset(Dataset):
     """ECG dataset"""
 
-    def __init__(self, json_file: str, prefix: str = "", transform=None, replace_missing=False, scale=True):
+    def __init__(self, json_file: str, prefix: str = "", transform=None, replace_missing=False, scale=True, load_ecg=True):
         """
         Args:
             json_file (string): Path to the json metadata file.
@@ -32,6 +32,7 @@ class ECGDataset(Dataset):
         self.std = np.ones(8)
         self.replace_missing = replace_missing
         self.scale = scale
+        self.load_ecg = load_ecg
 
     def __len__(self):
         return len(self.pids)
@@ -42,8 +43,11 @@ class ECGDataset(Dataset):
 
         pid_metadata = self.metadata[self.pids[idx]]
 
-        ecg_name = f"{self.prefix}/{pid_metadata['data'][self.ecg_type]}"
-        ecg = np.load(ecg_name).astype("f4")
+        if self.load_ecg:
+            ecg_name = f"{self.prefix}/{pid_metadata['data'][self.ecg_type]}"
+            ecg = np.load(ecg_name).astype("f4")
+        else:
+            ecg = None
 
         measures = list(pid_metadata["measures"].values())
         measures = np.array(measures)
@@ -58,7 +62,7 @@ class ECGDataset(Dataset):
 
         sample = {'ecg': ecg, 'measures': measures}
 
-        if self.transform:
+        if self.load_ecg and self.transform:
             sample = self.transform(sample)
 
         return sample
