@@ -11,7 +11,7 @@ import torch.nn as nn
 from utils import device, Start
 from pytorch_models import ResNet, ResNetDecoder, BasicBlock, DecoderBlock
 from trainer import Trainer
-from models import VAE, Encoder
+from models import VAE, Encoder, SupervisedVAE
 from dataset import ECGDataset
 from torchvision.transforms import Compose
 
@@ -41,7 +41,18 @@ def main(args):
         out_channels=12,
         **config["decoder"]
     )
-    vae = VAE(encoder, decoder).to(device)
+    measurement_names = [
+        'VentricularRate',
+        'PQInterval',
+        'PDuration',
+        'QRSDuration',
+        'QTInterval',
+        'QTCInterval',
+        'RRInterval',
+        'PPInterval',
+    ]
+    predictor = nn.Linear(latent_size, 8)
+    vae = SupervisedVAE(encoder, decoder, predictor).to(device)
 
     savedir = Path(args.out_dir)
     savedir.mkdir(exist_ok=True)

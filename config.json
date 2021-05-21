@@ -8,8 +8,14 @@
     "c": 10
   },
   "train": {
-    "kld_lag": 25,
-    "kld_warmup": 10
+    "lag": {
+      "kld": 25,
+      "supervised": 40
+    },
+    "warmup": {
+      "kld": 10,
+      "supervised": 10
+    }
   },
   "decoder": {
     "initial_size": 16,

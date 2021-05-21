@@ -12,7 +12,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import random_split
 
-from utils import device
+from utils import device, compute_means
 from dataset import DataLoader
 
 
@@ -30,20 +30,24 @@ class Trainer:
         self.optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4, amsgrad=False)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=patience, factor=0.1)
 
-        self.loss_history = []
-        self.loss_history_train = []
-        self.recon_loss_history_train = []
-        self.kld_loss_history_train = []
-        self.weighted_kld_loss_history_train = []
-
-    def train(self, dataset, num_epoch, kld_lag=0, kld_warmup=0, verbose=1, val_split=0.3, save_prefix=""):
+    def train(self, dataset, num_epoch, lag=None, warmup=None, verbose=1, val_split=0.3, save_prefix=""):
         savedir = f"{save_prefix}{self.savedir}"
         writer = SummaryWriter(savedir)
         iters = 0
 
+        if lag is None:
+            lag = {"kld": 0, "supervised": 0}
+        if warmup is None:
+            warmup = {"kld": 0, "supervised": 0}
+
         val_size = int(val_split * len(dataset))
         train_size = len(dataset) - val_size
         train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+        train_means = compute_means(train_dataset, batch_size=64)
+        train_dataset.dataset.means = train_means
+        val_dataset.dataset.means = train_means
+        train_dataset.dataset.replace_missing = True
+        val_dataset.dataset.replace_missing = True
         for epoch in range(num_epoch):
 
             t0 = time.time()
@@ -52,21 +56,20 @@ class Trainer:
             recon_losses = []
             kld_losses = []
             weighted_kld_losses = []
+            supervised_losses = []
+            weighted_supervised_losses = []
 
-            if epoch < kld_lag:
-                kld_weight = 0.0
-            else:
-                if kld_warmup == 0:
-                    kld_weight = 1.0
-                else:
-                    kld_weight = min(((1 + epoch - kld_lag)/kld_warmup)**4, 1.0)
+            kld_weight = self.get_weight(epoch, lag["kld"], warmup["kld"])
+            supervised_weight = self.get_weight(epoch, lag["supervised"], warmup["supervised"])
 
             for sample in dataloader:
                 x = sample["ecg"]
                 x = x.to(device)
+                y = sample["measures"]
+                y = y.to(device)
                 self.model.zero_grad()
-                output, latent, mean, log_var = self.model(x)
-                loss, reconstruction_loss, kld, weighted_kld = self.loss_fn(x, output, latent, mean, log_var, kld_weight)
+                output, y_output, latent, mean, log_var = self.model(x)
+                loss, reconstruction_loss, kld, weighted_kld, supervised_loss, weighted_supervised_loss = self.loss_fn(x, output, y, y_output, mean, log_var, kld_weight, supervised_weight)
                 loss.backward()
                 self.optimizer.step()
 
@@ -75,39 +78,43 @@ class Trainer:
                 recon_losses.append(reconstruction_loss.item())
                 kld_losses.append(kld.item())
                 weighted_kld_losses.append(weighted_kld.item())
+                supervised_losses.append(supervised_loss.item())
+                weighted_supervised_losses.append(weighted_supervised_loss.item())
 
                 iters += x.shape[0]
                 writer.add_scalar("iter_loss/all/train", losses[-1], iters)
                 writer.add_scalar("iter_loss/recon/train", recon_losses[-1], iters)
                 writer.add_scalar("iter_loss/kld/train", kld_losses[-1], iters)
+                writer.add_scalar("iter_loss/supervised/train", supervised_losses[-1], iters)
 
             # --------------------------------------------------------
             #       Evaluate performance at the end of each epoch
             # --------------------------------------------------------
 
             test_metrics = self.evaluate_model(val_dataset, kld_weight)
-            self.loss_history.append(test_metrics["loss"])
             if self.reduce_lr:
                 self.scheduler.step(test_metrics["loss"])
-
-            # Logging -- average train loss in this epoch
-            self.loss_history_train.append(np.mean(losses))
-            self.recon_loss_history_train.append(np.mean(recon_losses))
-            self.kld_loss_history_train.append(np.mean(kld_losses))
-            self.weighted_kld_loss_history_train.append(np.mean(weighted_kld_losses))
 
             param_grp = next(iter(self.optimizer.param_groups))
             writer.add_scalar("lr", param_grp["lr"], epoch)
 
-            writer.add_scalar("epoch_loss/all/train", self.loss_history_train[-1], epoch)
-            writer.add_scalar("epoch_loss/recon/train", self.recon_loss_history_train[-1], epoch)
-            writer.add_scalar("epoch_loss/kld/train", self.kld_loss_history_train[-1], epoch)
-            writer.add_scalar("epoch_loss/weighted_kld/train", self.weighted_kld_loss_history_train[-1], epoch)
+            writer.add_scalar("epoch_loss/all/train", np.mean(losses), epoch)
+            writer.add_scalar("epoch_loss/recon/train", np.mean(recon_losses), epoch)
+            writer.add_scalar("epoch_loss/kld/train", np.mean(kld_losses), epoch)
+            writer.add_scalar("epoch_loss/weighted_kld/train", np.mean(weighted_kld_losses), epoch)
+            writer.add_scalar("epoch_loss/supervised/train", np.mean(supervised_losses), epoch)
+            writer.add_scalar("epoch_loss/weighted_supervised/train", np.mean(weighted_supervised_losses), epoch)
 
-            writer.add_scalar("epoch_loss/all/val", test_metrics['loss'], epoch)
-            writer.add_scalar("epoch_loss/recon/val", test_metrics['recon_loss'], epoch)
-            writer.add_scalar("epoch_loss/kld/val", test_metrics['kld_loss'], epoch)
-            writer.add_scalar("epoch_loss/weighted_kld/val", test_metrics['weighted_kld_loss'], epoch)
+            loss_names = {
+                "loss": "all",
+                "recon_loss": "recon",
+                "kld_loss": "kld",
+                "weighted_kld_loss": "weighted_kld",
+                "supervised_loss": "supervised",
+                "weighted_supervised_loss": "weighted_supervised"
+            }
+            for k, v in loss_names.items():
+                writer.add_scalar(f"epoch_loss/{v}/val", test_metrics[k], epoch)
             writer.add_scalar("mae/val", test_metrics['mae'], epoch)
 
             writer.add_histogram("activity", test_metrics["activity"], epoch)
@@ -142,38 +149,44 @@ class Trainer:
 
             t1 = time.time()
             if verbose == 1:
-                print(f"Epoch {epoch}: Train Loss {self.loss_history_train[-1]}  Test Loss {test_metrics['loss']}  {(t1 - t0):.0f} seconds")
+                print(f"Epoch {epoch}: Train Loss {np.mean(losses)}  Test Loss {test_metrics['loss']}  {(t1 - t0):.0f} seconds")
 
     def forward_by_batches(self, dataset):
         """ Forward pass model on a dataset.
         Do this by batches so that we don't blow up the memory. """
-        outputs = [[] for i in range(4)]
+        n_outputs = 5
+        outputs = [[] for i in range(n_outputs)]
         xs = []
+        ys = []
         dataloader = DataLoader(dataset, 64, False, num_workers=3)
         self.model.eval()
         with torch.no_grad():
             for sample in dataloader:  # do not shuffle here!
                 x = sample["ecg"]
+                y = sample["measures"]
                 x = x.to(device)
+                y = y.to(device)
                 out = self.model(x)
-                for i in range(4):
+                for i in range(n_outputs):
                     outputs[i].append(out[i])
                 xs.append(x)
+                ys.append(y)
         self.model.train()
 
         outputs = [torch.cat(out_list) for out_list in outputs]
         x = torch.cat(xs)
-        return [x, *outputs]
+        y = torch.cat(ys)
+        return [x, y, *outputs]
 
-    def evaluate_model(self, dataset, kld_weight=1.0):
+    def evaluate_model(self, dataset, kld_weight=1.0, supervised_weight=1.0):
 
-        x, output, latent, mean, log_var = self.forward_by_batches(dataset)
+        x, y, output, pred, latent, mean, log_var = self.forward_by_batches(dataset)
 
         activity = np.diag(np.cov(mean.cpu().numpy().T))
         n_active = (activity > 0.01).sum()
 
         # scores
-        loss, recon_loss, kld_loss, weighted_kld = self.loss_fn(x, output, latent, mean, log_var, kld_weight)
+        loss, recon_loss, kld_loss, weighted_kld, supervised_loss, weighted_supervised_loss = self.loss_fn(x, output, y, pred, mean, log_var, kld_weight, supervised_weight)
 
         mae = F.l1_loss(x, output).item()
         mse = F.mse_loss(x, output).item()
@@ -183,6 +196,8 @@ class Trainer:
             "recon_loss": recon_loss.item(),
             "kld_loss": kld_loss.item(),
             "weighted_kld_loss": weighted_kld.item(),
+            "supervised_loss": supervised_loss.item(),
+            "weighted_supervised_loss": weighted_supervised_loss.item(),
             "output": output.cpu().numpy(),
             "mae": mae,
             "mse": mse,
@@ -191,14 +206,16 @@ class Trainer:
         }
         return out_metrics
 
-    def loss_fn(self, x, x_hat, latent, mean, log_var, kld_weight=1.0):
+    def loss_fn(self, x, x_hat, y, y_hat, mean, log_var, kld_weight=1.0, supervised_weight=1.0):
         reconstruction_loss = F.mse_loss(x_hat, x, reduction='mean')
         kld = - self.c * 0.5 * torch.mean(1 + log_var - mean.pow(2) - log_var.exp())
         weighted_kld = kld * kld_weight
+        supervised_loss = F.mse_loss(y_hat, y, reduction="mean")
+        weighted_supervised_loss = supervised_loss * supervised_weight
 
-        loss = reconstruction_loss + weighted_kld
+        loss = reconstruction_loss + weighted_kld + weighted_supervised_loss
 
-        return loss, reconstruction_loss, kld, weighted_kld
+        return loss, reconstruction_loss, kld, weighted_kld, supervised_loss, weighted_supervised_loss
 
     def plot_example(self, dataset, idx, mean=False):
         sample = dataset[idx]
@@ -212,7 +229,7 @@ class Trainer:
             for j in range(5):
                 X_examples.append(self.model(x_torch)[0].cpu().numpy())
 
-            X_means = self.model.decoder(self.model(x_torch)[1]).cpu().numpy()
+            X_means = self.model.decoder(self.model(x_torch)[3]).cpu().numpy()
         for i, ax in enumerate(axes.flatten()):
             for j in range(5):
                 ax.plot(X_examples[j][0, i], color="grey", alpha=0.3, linewidth=2)
@@ -224,3 +241,13 @@ class Trainer:
         self.model.train()
         return fig
 
+    @staticmethod
+    def get_weight(epoch, lag, warmup):
+        if epoch < lag:
+            weight = 0.0
+        else:
+            if warmup == 0:
+                weight = 1.0
+            else:
+                weight = min(((1 + epoch - lag)/warmup)**4, 1.0)
+        return weight
