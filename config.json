@@ -5,7 +5,8 @@
     "batch_size": 32,
     "patience": 50,
     "reduce_lr": false,
-    "c": 10
+    "c": 10,
+    "supervised_importance": 30
   },
   "train": {
     "lag": {

@@ -15,13 +15,14 @@ from dataset import DataLoader
 
 
 class Trainer:
-    def __init__(self, model, model_name, batch_size, lr, c, reduce_lr=True, patience=10):
+    def __init__(self, model, model_name, batch_size, lr, c, supervised_importance, reduce_lr=True, patience=10):
         self.model = model
         self.model_name = model_name
         self.savedir = f"{model_name}-{datetime.now().strftime('%d-%H%M%S')}"
         self.batch_size = batch_size
         self.lr = lr
         self.c = c
+        self.supervised_importance = supervised_importance
         self.reduce_lr = reduce_lr
         self.patience = patience
 
@@ -201,7 +202,7 @@ class Trainer:
         reconstruction_loss = F.mse_loss(x_hat, x, reduction='mean')
         kld = - self.c * 0.5 * torch.mean(1 + log_var - mean.pow(2) - log_var.exp())
         weighted_kld = kld * kld_weight
-        supervised_loss = F.mse_loss(y_hat, y, reduction="mean")
+        supervised_loss = self.supervised_importance * F.mse_loss(y_hat, y, reduction="mean")
         weighted_supervised_loss = supervised_loss * supervised_weight
 
         loss = reconstruction_loss + weighted_kld + weighted_supervised_loss
