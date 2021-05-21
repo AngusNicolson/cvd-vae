@@ -44,12 +44,12 @@ class ECGDataset(Dataset):
         ecg = np.load(ecg_name).astype("f4")
 
         measures = list(pid_metadata["measures"].values())
-        measures = np.array([measures])
+        measures = np.array(measures)
         measures = measures.astype('f4')
 
         if self.replace_missing:
             missing = np.where(np.isnan(measures))
-            measures[missing] = np.take(self.means, missing[1])
+            measures[missing] = np.take(self.means, missing[0])
 
         sample = {'ecg': ecg, 'measures': measures}
 
@@ -64,9 +64,9 @@ class ECGDataset(Dataset):
         counts = torch.zeros(8)
         for sample in dataloader:
             measures = sample["measures"]
-            counts += (~measures.isnan()).sum([0, 1])
+            counts += (~measures.isnan()).sum(0)
             measures[measures.isnan()] = 0
-            means += measures.sum([0, 1])
+            means += measures.sum(0)
 
         means = means / counts
         self.means = means.numpy().round()
@@ -124,6 +124,10 @@ if __name__ == "__main__":
         plt.savefig(f"/home/angus/dataset_test_transform{i_batch}.png")
         if i_batch == 2:
             break
+
+    dataset.compute_means(64)
+    dataset.replace_missing = True
+    print(dataset[9])
 
     transform = Compose([
         RandomCrop(output_size=1024)
