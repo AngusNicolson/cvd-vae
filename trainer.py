@@ -131,10 +131,10 @@ class Trainer:
             fig = self.plot_example(val_dataset, 2, True)
             writer.add_figure("example/test_mean", fig, epoch)
 
-            fig = self.plot_example(val_dataset, 2)
+            fig = self.plot_example(train_dataset, 2)
             writer.add_figure("example/train", fig, epoch)
 
-            fig = self.plot_example(val_dataset, 2, True)
+            fig = self.plot_example(train_dataset, 2, True)
             writer.add_figure("example/train_mean", fig, epoch)
 
             if (epoch + 1) % 10 == 0:
