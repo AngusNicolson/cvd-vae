@@ -30,7 +30,7 @@ class Trainer:
         self.optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4, amsgrad=False)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=patience, factor=0.1)
 
-    def train(self, dataset, num_epoch, lag=None, warmup=None, verbose=1, val_split=0.3, save_prefix=""):
+    def train(self, dataset, num_epoch, lag=None, warmup=None, verbose=1, val_split=0.3, save_prefix="", set_predictor_bias=True):
         savedir = f"{save_prefix}{self.savedir}"
         writer = SummaryWriter(savedir)
         iters = 0
@@ -48,6 +48,10 @@ class Trainer:
         val_dataset.dataset.means = train_means
         train_dataset.dataset.replace_missing = True
         val_dataset.dataset.replace_missing = True
+
+        if set_predictor_bias:
+            self.model.predictor.bias = nn.Parameter(torch.from_numpy(train_means).to(device))
+
         for epoch in range(num_epoch):
 
             t0 = time.time()
@@ -131,6 +135,9 @@ class Trainer:
             writer.add_histogram("decoder.linear/weight", self.model.decoder.linear.weight, epoch)
             #writer.add_histogram("decoder.conv1/weight", self.model.decoder.conv1[1].weight, epoch)
             writer.add_histogram("decoder.conv2/weight", self.model.decoder.conv2[1].weight, epoch)
+            writer.add_histogram("predictor/bias", self.model.predictor.bias, epoch)
+            writer.add_histogram("predictor/weight", self.model.predictor.weight, epoch)
+
 
             fig = self.plot_example(val_dataset, 2)
             writer.add_figure("example/test", fig, epoch)

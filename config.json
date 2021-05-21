@@ -9,20 +9,21 @@
   },
   "train": {
     "lag": {
-      "kld": 25,
-      "supervised": 40
+      "kld": 40,
+      "supervised": 80
     },
     "warmup": {
-      "kld": 10,
-      "supervised": 10
-    }
+      "kld": 20,
+      "supervised": 30
+    },
+    "set_predictor_bias": true
   },
   "decoder": {
     "initial_size": 16,
     "conv1_scale": 2,
     "conv2_scale": 4
   },
-  "epochs": 120,
+  "epochs": 180,
   "ecg_size": 1024,
   "latent_size": 16
 }
