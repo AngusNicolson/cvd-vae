@@ -1,7 +1,7 @@
 
 import numpy as np
 import torch
-from scipy.signal import firwin, lfilter
+from torch.utils.data import DataLoader
 
 
 # Grab a GPU if there is one
@@ -39,3 +39,17 @@ class RandomCrop(object):
         end = start + self.output_size
 
         return {"ecg": ecg[:, start:end], "measures": measures}
+
+
+def compute_means(dataset, batch_size):
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    means = torch.zeros(8)
+    counts = torch.zeros(8)
+    for sample in dataloader:
+        measures = sample["measures"]
+        counts += (~measures.isnan()).sum(0)
+        measures[measures.isnan()] = 0
+        means += measures.sum(0)
+
+    means = means / counts
+    return means.numpy().round()
