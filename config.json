@@ -15,8 +15,7 @@
     "warmup": {
       "kld": 20,
       "supervised": 30
-    },
-    "set_predictor_bias": true
+    }
   },
   "decoder": {
     "initial_size": 16,

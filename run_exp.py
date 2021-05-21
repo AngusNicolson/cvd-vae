@@ -4,16 +4,15 @@ from argparse import ArgumentParser
 import json
 
 import numpy as np
-
 import torch
 import torch.nn as nn
+from torchvision.transforms import Compose
 
-from utils import device, Start
+from utils import device, Start, split_dataset
 from pytorch_models import ResNet, ResNetDecoder, BasicBlock, DecoderBlock
 from trainer import Trainer
 from models import VAE, Encoder, SupervisedVAE
 from dataset import ECGDataset
-from torchvision.transforms import Compose
 
 # For reproducibility
 np.random.seed(42)
@@ -29,6 +28,7 @@ def main(args):
         Start(output_size=config["ecg_size"])
     ])
     dataset = ECGDataset(args.dataset, args.prefix, transform=transform)
+    train_dataset, val_dataset = split_dataset(dataset)
 
     encoder_resnet = ResNet(BasicBlock, [2, 2, 2, 2], do_fc=False, in_channels=12, inner_kernel=3, first_kernel=7)
     latent_size = config["latent_size"]
@@ -64,7 +64,7 @@ def main(args):
     with open(f"{train_dir}/config.json", "w") as fp:
         json.dump(config, fp, indent=2)
 
-    trainer.train(dataset, config["epochs"], save_prefix=str(savedir) + "/", **config["train"])
+    trainer.train(train_dataset, val_dataset, config["epochs"], save_prefix=str(savedir) + "/", **config["train"])
 
     print("Done!")
 

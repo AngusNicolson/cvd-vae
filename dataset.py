@@ -14,7 +14,7 @@ from torchvision.transforms import Compose
 class ECGDataset(Dataset):
     """ECG dataset"""
 
-    def __init__(self, json_file: str, prefix: str = "", transform=None, replace_missing=False):
+    def __init__(self, json_file: str, prefix: str = "", transform=None, replace_missing=False, scale=True):
         """
         Args:
             json_file (string): Path to the json metadata file.
@@ -29,7 +29,9 @@ class ECGDataset(Dataset):
         self.pids = list(np.sort(list(self.metadata.keys())))
         self.ecg_type = "strip"
         self.means = np.zeros(8)
+        self.std = np.ones(8)
         self.replace_missing = replace_missing
+        self.scale = scale
 
     def __len__(self):
         return len(self.pids)
@@ -51,25 +53,15 @@ class ECGDataset(Dataset):
             missing = np.where(np.isnan(measures))
             measures[missing] = np.take(self.means, missing[0])
 
+        if self.scale:
+            measures = ((measures - self.means) / self.std).astype('f4')
+
         sample = {'ecg': ecg, 'measures': measures}
 
         if self.transform:
             sample = self.transform(sample)
 
         return sample
-
-    def compute_means(self, batch_size):
-        dataloader = DataLoader(self, batch_size=batch_size, shuffle=False)
-        means = torch.zeros(8)
-        counts = torch.zeros(8)
-        for sample in dataloader:
-            measures = sample["measures"]
-            counts += (~measures.isnan()).sum(0)
-            measures[measures.isnan()] = 0
-            means += measures.sum(0)
-
-        means = means / counts
-        self.means = means.numpy().round()
 
 
 if __name__ == "__main__":
@@ -124,10 +116,6 @@ if __name__ == "__main__":
         plt.savefig(f"/home/angus/dataset_test_transform{i_batch}.png")
         if i_batch == 2:
             break
-
-    dataset.compute_means(64)
-    dataset.replace_missing = True
-    print(dataset[9])
 
     transform = Compose([
         RandomCrop(output_size=1024)

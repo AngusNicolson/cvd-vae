@@ -6,13 +6,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data import random_split
 
-from utils import device, compute_means
+from utils import device
 from dataset import DataLoader
 
 
@@ -30,7 +28,7 @@ class Trainer:
         self.optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4, amsgrad=False)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=patience, factor=0.1)
 
-    def train(self, dataset, num_epoch, lag=None, warmup=None, verbose=1, val_split=0.3, save_prefix="", set_predictor_bias=True):
+    def train(self, train_dataset, val_dataset, num_epoch, lag=None, warmup=None, verbose=1, save_prefix=""):
         savedir = f"{save_prefix}{self.savedir}"
         writer = SummaryWriter(savedir)
         iters = 0
@@ -40,20 +38,7 @@ class Trainer:
         if warmup is None:
             warmup = {"kld": 0, "supervised": 0}
 
-        val_size = int(val_split * len(dataset))
-        train_size = len(dataset) - val_size
-        train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-        train_means = compute_means(train_dataset, batch_size=64)
-        train_dataset.dataset.means = train_means
-        val_dataset.dataset.means = train_means
-        train_dataset.dataset.replace_missing = True
-        val_dataset.dataset.replace_missing = True
-
-        if set_predictor_bias:
-            self.model.predictor.bias = nn.Parameter(torch.from_numpy(train_means).to(device))
-
         for epoch in range(num_epoch):
-
             t0 = time.time()
             dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=3)
             losses = []
@@ -137,7 +122,6 @@ class Trainer:
             writer.add_histogram("decoder.conv2/weight", self.model.decoder.conv2[1].weight, epoch)
             writer.add_histogram("predictor/bias", self.model.predictor.bias, epoch)
             writer.add_histogram("predictor/weight", self.model.predictor.weight, epoch)
-
 
             fig = self.plot_example(val_dataset, 2)
             writer.add_figure("example/test", fig, epoch)
