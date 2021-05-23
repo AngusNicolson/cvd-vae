@@ -53,6 +53,10 @@ class ECGDataset(Dataset):
         measures = np.array(measures)
         measures = measures.astype('f4')
 
+        survival = pid_metadata["cvd"]
+        incident = np.array(survival["incident"]).astype("int32")
+        fu_time = np.array(survival["fu_time"]).astype("float32")
+
         if self.replace_missing:
             missing = np.where(np.isnan(measures))
             measures[missing] = np.take(self.means, missing[0])
@@ -60,7 +64,7 @@ class ECGDataset(Dataset):
         if self.scale:
             measures = ((measures - self.means) / self.std).astype('f4')
 
-        sample = {'ecg': ecg, 'measures': measures}
+        sample = {'ecg': ecg, 'measures': measures, "incident": incident, "fu_time": fu_time}
 
         if self.load_ecg and self.transform:
             sample = self.transform(sample)
