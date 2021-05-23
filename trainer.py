@@ -202,8 +202,8 @@ class Trainer:
         reconstruction_loss = F.mse_loss(x_hat, x, reduction='mean')
         kld = - self.c * 0.5 * torch.mean(1 + log_var - mean.pow(2) - log_var.exp())
         weighted_kld = kld * kld_weight
-        supervised_loss = self.supervised_importance * F.mse_loss(y_hat, y, reduction="mean")
-        weighted_supervised_loss = supervised_loss * supervised_weight
+        supervised_loss = F.mse_loss(y_hat, y, reduction="mean")
+        weighted_supervised_loss = supervised_loss * supervised_weight * self.supervised_importance
 
         loss = reconstruction_loss + weighted_kld + weighted_supervised_loss
 
