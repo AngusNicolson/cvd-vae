@@ -5,18 +5,25 @@
     "batch_size": 32,
     "patience": 50,
     "reduce_lr": false,
-    "c": 10
+    "c": 10,
+    "supervised_importance": 30
   },
   "train": {
-    "kld_lag": 25,
-    "kld_warmup": 10
+    "lag": {
+      "kld": 40,
+      "supervised": 80
+    },
+    "warmup": {
+      "kld": 20,
+      "supervised": 30
+    }
   },
   "decoder": {
     "initial_size": 16,
     "conv1_scale": 2,
     "conv2_scale": 4
   },
-  "epochs": 120,
+  "epochs": 180,
   "ecg_size": 1024,
   "latent_size": 16
 }

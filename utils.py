@@ -1,7 +1,7 @@
 
 import numpy as np
 import torch
-from scipy.signal import firwin, lfilter
+from torch.utils.data import DataLoader, random_split
 
 
 # Grab a GPU if there is one
@@ -13,26 +13,69 @@ else:
     print("Using {}".format(device))
 
 
-def clean_ecg(data, filter_size=251, thresh=800):
-    """Bandpass FIR filter then remove ECGs with |values| > thresh"""
-    filtered_data = filter_ecg(data, filter_size=filter_size)
+class Start(object):
+    """Return beginning of ECG"""
 
-    # Find ECG containing high values after filter
-    maxes = filtered_data.max(axis=1).max(axis=1)
-    locs = np.where(maxes > thresh)[0]
+    def __init__(self, output_size):
+        self.output_size = output_size
 
-    # Remove
-    filtered_data = np.delete(filtered_data, locs, axis=0)
+    def __call__(self, sample):
+        ecg, measures = sample["ecg"], sample["measures"]
 
-    return filtered_data
+        return {"ecg": ecg[:, :self.output_size], "measures": measures}
 
 
-def filter_ecg(data, filter_size=251, low=3, high=45):
-    """Bandpass FIR filter input data"""
-    nyq_rate = 500 / 2  # 500 Hz data
+class RandomCrop(object):
+    """Randomly crop ECG"""
 
-    fir_filter = firwin(filter_size, [low / nyq_rate, high / nyq_rate], pass_zero="bandpass")
-    filtered_data = lfilter(fir_filter, 1, data, axis=1)
+    def __init__(self, output_size):
+        self.output_size = output_size
 
-    # Filter corrupts beginning signal with initial conditions
-    return filtered_data[:, filter_size:, :]
+    def __call__(self, sample):
+        ecg, measures = sample["ecg"], sample["measures"]
+
+        size = ecg.shape[-1]
+        start = np.random.randint(0, size - self.output_size)
+        end = start + self.output_size
+
+        return {"ecg": ecg[:, start:end], "measures": measures}
+
+
+def compute_means(dataset, batch_size):
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    means = torch.zeros(8)
+    counts = torch.zeros(8)
+    for sample in dataloader:
+        measures = sample["measures"]
+        counts += (~measures.isnan()).sum(0)
+        measures[measures.isnan()] = 0
+        means += measures.sum(0)
+
+    means = means / counts
+    return means.numpy().round()
+
+
+def split_dataset(dataset, val_split=0.3):
+    val_size = int(val_split * len(dataset))
+    train_size = len(dataset) - val_size
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+
+    train_dataset.dataset.load_ecg = False
+    # Calculate std and mean of training set to scale data
+    data = np.zeros((len(train_dataset), 8))
+    for i in range(len(train_dataset)):
+        data[i] = train_dataset[i]["measures"]
+    train_dataset.dataset.load_ecg = True
+
+    std = np.nanstd(data, axis=0)
+    mean = np.nanmean(data, axis=0)
+
+    train_dataset.dataset.means = mean
+    val_dataset.dataset.means = mean
+
+    train_dataset.dataset.std = std
+    val_dataset.dataset.std = std
+
+    train_dataset.dataset.replace_missing = True
+    val_dataset.dataset.replace_missing = True
+    return train_dataset, val_dataset

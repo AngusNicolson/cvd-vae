@@ -54,3 +54,22 @@ class VAE(nn.Module):
         return out, latent, mean, log_var
 
 
+class SupervisedVAE(nn.Module):
+    def __init__(self, encoder, decoder, predictor):
+        super(SupervisedVAE, self).__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.predictor = predictor
+
+    def forward(self, x):
+        latent, mean, log_var = self.encoder(x)
+        out = self.decoder(latent)
+        pred = self.predictor(latent)
+
+        return out, pred, latent, mean, log_var
+
+    def from_vae(self, vae, predictor=None):
+        self.encoder = vae.encoder
+        self.decoder = vae.decoder
+        if predictor is not None:
+            self.predictor = predictor
