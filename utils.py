@@ -50,9 +50,13 @@ def split_dataset(dataset, val_split=0.3):
     return train_dataset, val_dataset
 
 
-def sort_batch(batch):
+def sort_batch(batch, return_ind=False):
     """Sort batch by follow up time (descending)"""
     fu_time = batch["fu_time"]
     ind = np.argsort(fu_time)
     ind = torch.flip(ind, dims=[0])
-    return {k: v[ind] for k, v in batch.items()}
+    out = {k: v[ind] for k, v in batch.items()}
+    if return_ind:
+        return out, ind
+    else:
+        return out

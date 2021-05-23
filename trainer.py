@@ -149,38 +149,35 @@ class Trainer:
         Do this by batches so that we don't blow up the memory. """
         n_outputs = 5
         outputs = [[] for i in range(n_outputs)]
-        xs = []
-        ys = []
+        inputs = {"ecg": [], "incident": [], "fu_time": []}
         dataloader = DataLoader(dataset, 64, False, num_workers=3)
         self.model.eval()
         with torch.no_grad():
             for sample in dataloader:  # do not shuffle here!
-                sample = sort_batch(sample)
-                x = sample["ecg"]
-                y = sample["measures"]
-                x = x.to(device)
-                y = y.to(device)
-                out = self.model(x)
+                for k in inputs.keys():
+                    inputs[k].append(sample[k].to(device))
+                out = self.model(inputs["ecg"][-1])
                 for i in range(n_outputs):
                     outputs[i].append(out[i])
-                xs.append(x)
-                ys.append(y)
         self.model.train()
 
         outputs = [torch.cat(out_list) for out_list in outputs]
-        x = torch.cat(xs)
-        y = torch.cat(ys)
-        return [x, y, *outputs]
+        inputs = {k: torch.cat(v) for k, v in inputs.items()}
+        return inputs, outputs
 
     def evaluate_model(self, dataset, kld_weight=1.0, supervised_weight=1.0):
-
-        x, y, output, pred, latent, mean, log_var = self.forward_by_batches(dataset)
+        inputs, outputs = self.forward_by_batches(dataset)
+        # Sort tensors by fu_time
+        inputs, ind = sort_batch(inputs, return_ind=True)
+        outputs = [o[ind] for o in outputs]
+        output, pred, latent, mean, log_var = outputs
+        x, censor_status, fu_time = list(inputs.values())
 
         activity = np.diag(np.cov(mean.cpu().numpy().T))
         n_active = (activity > 0.01).sum()
 
         # scores
-        loss, recon_loss, kld_loss, weighted_kld, supervised_loss, weighted_supervised_loss = self.loss_fn(x, output, y, pred, mean, log_var, kld_weight, supervised_weight)
+        loss, recon_loss, kld_loss, weighted_kld, supervised_loss, weighted_supervised_loss = self.loss_fn(x, output, censor_status, pred, mean, log_var, kld_weight, supervised_weight)
 
         mae = F.l1_loss(x, output).item()
         mse = F.mse_loss(x, output).item()
@@ -200,11 +197,11 @@ class Trainer:
         }
         return out_metrics
 
-    def loss_fn(self, x, x_hat, y, y_hat, mean, log_var, kld_weight=1.0, supervised_weight=1.0):
+    def loss_fn(self, x, x_hat, censor_status, y_hat, mean, log_var, kld_weight=1.0, supervised_weight=1.0):
         reconstruction_loss = F.mse_loss(x_hat, x, reduction='mean')
         kld = - self.c * 0.5 * torch.mean(1 + log_var - mean.pow(2) - log_var.exp())
         weighted_kld = kld * kld_weight
-        supervised_loss = self._negative_log_likelihood(y, y_hat)
+        supervised_loss = self._negative_log_likelihood(censor_status, y_hat)
         weighted_supervised_loss = supervised_loss * supervised_weight * self.supervised_importance
 
         loss = reconstruction_loss + weighted_kld + weighted_supervised_loss
