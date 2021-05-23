@@ -1,7 +1,7 @@
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import random_split
 
 
 # Grab a GPU if there is one
@@ -20,9 +20,10 @@ class Start(object):
         self.output_size = output_size
 
     def __call__(self, sample):
-        ecg, measures = sample["ecg"], sample["measures"]
+        ecg = sample["ecg"]
+        sample["ecg"] = ecg[:, :self.output_size]
 
-        return {"ecg": ecg[:, :self.output_size], "measures": measures}
+        return sample
 
 
 class RandomCrop(object):
@@ -32,27 +33,14 @@ class RandomCrop(object):
         self.output_size = output_size
 
     def __call__(self, sample):
-        ecg, measures = sample["ecg"], sample["measures"]
+        ecg = sample["ecg"]
 
         size = ecg.shape[-1]
         start = np.random.randint(0, size - self.output_size)
         end = start + self.output_size
+        sample["ecg"] = ecg[:, start:end]
 
-        return {"ecg": ecg[:, start:end], "measures": measures}
-
-
-def compute_means(dataset, batch_size):
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    means = torch.zeros(8)
-    counts = torch.zeros(8)
-    for sample in dataloader:
-        measures = sample["measures"]
-        counts += (~measures.isnan()).sum(0)
-        measures[measures.isnan()] = 0
-        means += measures.sum(0)
-
-    means = means / counts
-    return means.numpy().round()
+        return sample
 
 
 def split_dataset(dataset, val_split=0.3):
