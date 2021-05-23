@@ -59,23 +59,11 @@ def split_dataset(dataset, val_split=0.3):
     val_size = int(val_split * len(dataset))
     train_size = len(dataset) - val_size
     train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-
-    train_dataset.dataset.load_ecg = False
-    # Calculate std and mean of training set to scale data
-    data = np.zeros((len(train_dataset), 8))
-    for i in range(len(train_dataset)):
-        data[i] = train_dataset[i]["measures"]
-    train_dataset.dataset.load_ecg = True
-
-    std = np.nanstd(data, axis=0)
-    mean = np.nanmean(data, axis=0)
-
-    train_dataset.dataset.means = mean
-    val_dataset.dataset.means = mean
-
-    train_dataset.dataset.std = std
-    val_dataset.dataset.std = std
-
-    train_dataset.dataset.replace_missing = True
-    val_dataset.dataset.replace_missing = True
     return train_dataset, val_dataset
+
+
+def sort_batch(batch):
+    """Sort batch by follow up time (descending)"""
+    fu_time = batch["fu_time"]
+    ind = np.argsort(fu_time)[::-1]
+    return {k: v[ind] for k, v in batch.items()}

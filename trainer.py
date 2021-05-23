@@ -9,9 +9,9 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
 
-from utils import device
-from dataset import DataLoader
+from utils import device, sort_batch
 
 
 class Trainer:
@@ -53,9 +53,10 @@ class Trainer:
             supervised_weight = self.get_weight(epoch, lag["supervised"], warmup["supervised"])
 
             for sample in dataloader:
+                sample = sort_batch(sample)
                 x = sample["ecg"]
                 x = x.to(device)
-                y = sample["measures"]
+                y = sample["incident"]
                 y = y.to(device)
                 self.model.zero_grad()
                 output, y_output, latent, mean, log_var = self.model(x)
@@ -154,6 +155,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             for sample in dataloader:  # do not shuffle here!
+                sample = sort_batch(sample)
                 x = sample["ecg"]
                 y = sample["measures"]
                 x = x.to(device)
@@ -202,12 +204,29 @@ class Trainer:
         reconstruction_loss = F.mse_loss(x_hat, x, reduction='mean')
         kld = - self.c * 0.5 * torch.mean(1 + log_var - mean.pow(2) - log_var.exp())
         weighted_kld = kld * kld_weight
-        supervised_loss = F.mse_loss(y_hat, y, reduction="mean")
+        supervised_loss = self._negative_log_likelihood(y, y_hat)
         weighted_supervised_loss = supervised_loss * supervised_weight * self.supervised_importance
 
         loss = reconstruction_loss + weighted_kld + weighted_supervised_loss
 
         return loss, reconstruction_loss, kld, weighted_kld, supervised_loss, weighted_supervised_loss
+
+    @staticmethod
+    def _negative_log_likelihood(censor_status, risk):
+        """
+        Define Cox PH partial likelihood function loss.
+
+        Taken from "https://github.com/UK-Digital-Heart-Project/4Dsurvival/blob/master/survival4D/nn.py"
+        Arguments: censor_status (censoring status) bool, risk (risk [log hazard ratio] predicted by network) for batch of input subjects
+        As defined, this function requires that all subjects in input batch must be sorted in descending order of
+        followup time
+        """
+        hazard_ratio = torch.exp(risk)
+        log_risk = torch.log(torch.cumsum(hazard_ratio, dim=-1))
+        uncensored_likelihood = risk - log_risk
+        censored_likelihood = uncensored_likelihood * censor_status
+        neg_likelihood = -torch.sum(censored_likelihood)
+        return neg_likelihood
 
     def plot_example(self, dataset, idx, mean=False):
         sample = dataset[idx]

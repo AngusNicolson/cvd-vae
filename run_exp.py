@@ -67,7 +67,7 @@ def create_supervised_vae(config):
         out_channels=12,
         **config["decoder"]
     )
-    predictor = nn.Linear(latent_size, 8)
+    predictor = nn.Linear(latent_size, 1)
     vae = SupervisedVAE(encoder, decoder, predictor).to(device)
     return vae
 
