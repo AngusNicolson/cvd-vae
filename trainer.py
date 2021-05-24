@@ -219,6 +219,7 @@ class Trainer:
         followup time
         """
         risk = risk.squeeze()
+        risk = torch.sigmoid(risk)
         hazard_ratio = torch.exp(risk)
         log_risk = torch.log(torch.cumsum(hazard_ratio, dim=-1))
         uncensored_likelihood = risk - log_risk
