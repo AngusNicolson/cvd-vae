@@ -218,6 +218,7 @@ class Trainer:
         As defined, this function requires that all subjects in input batch must be sorted in descending order of
         followup time
         """
+        risk = risk.squeeze()
         hazard_ratio = torch.exp(risk)
         log_risk = torch.log(torch.cumsum(hazard_ratio, dim=-1))
         uncensored_likelihood = risk - log_risk
