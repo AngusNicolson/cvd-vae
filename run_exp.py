@@ -50,7 +50,7 @@ def load_data(config):
     transform = Compose([
         Start(output_size=config["ecg_size"])
     ])
-    dataset = ECGDataset(args.dataset, args.prefix, transform=transform)
+    dataset = ECGDataset(args.dataset, args.prefix, transform=transform, positive_ratio=config["positive_ratio"])
     train_dataset, val_dataset = split_dataset(dataset)
     return train_dataset, val_dataset
 

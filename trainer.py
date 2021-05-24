@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from utils import device, sort_batch
 
@@ -41,7 +41,8 @@ class Trainer:
 
         for epoch in range(num_epoch):
             t0 = time.time()
-            dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=3)
+            sampler = WeightedRandomSampler(np.array(train_dataset.dataset.weight)[train_dataset.indices], len(train_dataset))
+            dataloader = DataLoader(train_dataset, batch_size=self.batch_size, sampler=sampler, num_workers=3)
             losses = []
             recon_losses = []
             kld_losses = []
