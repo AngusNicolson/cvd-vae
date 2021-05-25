@@ -125,8 +125,12 @@ class Trainer:
             writer.add_histogram("decoder.linear/weight", self.model.decoder.linear.weight, epoch)
             #writer.add_histogram("decoder.conv1/weight", self.model.decoder.conv1[1].weight, epoch)
             writer.add_histogram("decoder.conv2/weight", self.model.decoder.conv2[1].weight, epoch)
-            writer.add_histogram("predictor/bias", self.model.predictor.bias, epoch)
-            writer.add_histogram("predictor/weight", self.model.predictor.weight, epoch)
+            if len(self.model.predictor) == 1:
+                writer.add_histogram("predictor/bias", self.model.predictor.bias, epoch)
+                writer.add_histogram("predictor/weight", self.model.predictor.weight, epoch)
+            else:
+                writer.add_histogram("predictor/bias", self.model.predictor[-1].bias, epoch)
+                writer.add_histogram("predictor/weight", self.model.predictor[-1].weight, epoch)
 
             fig = self.plot_example(val_dataset, 2)
             writer.add_figure("example/test", fig, epoch)

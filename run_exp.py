@@ -67,10 +67,40 @@ def create_supervised_vae(config):
         out_channels=12,
         **config["decoder"]
     )
-    predictor = nn.Linear(latent_size, 1)
+    predictor = create_predictor(config)
     vae = SupervisedVAE(encoder, decoder, predictor).to(device)
     return vae
 
+
+def create_predictor(config):
+    if len(config["predictor"]) > 0:
+        n_features = [config["latent_size"]] + config["predictor"]["n"] + [1]
+        n_layers = len(n_features) - 1
+        linears = [nn.Linear(n_features[i], n_features[i+1]) for i in range(n_layers)]
+        activations = []
+        for act_label in config["predictor"]["activations"]:
+            if act_label == "sigmoid":
+                act = nn.Sigmoid()
+            elif act_label == "relu":
+                act = nn.Tanh()
+            elif act_label == "tanh":
+                act = nn.Tanh()
+            else:
+                raise NotImplementedError(
+                    f"{act_label} activation not implemented. Only tanh, relu and sigmoid available."
+                )
+            activations.append(act)
+
+        layers = []
+        for i in range(n_layers - 1):
+            layers += [linears[i], activations[i]]
+        layers.append(linears[-1])
+
+        predictor = nn.Sequential(
+            *layers
+        )
+
+        return predictor
 
 def create_vae(config):
     encoder_resnet = ResNet(BasicBlock, [2, 2, 2, 2], do_fc=False, in_channels=12, inner_kernel=3, first_kernel=7)

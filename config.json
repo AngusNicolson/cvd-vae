@@ -23,6 +23,10 @@
     "conv1_scale": 2,
     "conv2_scale": 4
   },
+  "predictor": {
+    "n": [32],
+    "activations": ["relu"]
+  },
   "epochs": 180,
   "ecg_size": 1024,
   "latent_size": 16,
