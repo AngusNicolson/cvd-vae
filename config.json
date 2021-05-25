@@ -30,5 +30,9 @@
   "epochs": 180,
   "ecg_size": 1024,
   "latent_size": 16,
-  "positive_ratio": 0.25
+  "positive_ratio": 0.25,
+  "load": {
+    "path": null,
+    "load_predictor": true
+  }
 }

@@ -28,8 +28,8 @@ def main(args):
 
     vae = create_supervised_vae(config)
 
-    if args.load is not None:
-        vae = load_pretrained(vae, args)
+    if config["load"]["path"] is not None:
+        vae = load_pretrained(vae, **config["load"])
 
     savedir = Path(args.out_dir)
     savedir.mkdir(exist_ok=True)
@@ -102,6 +102,7 @@ def create_predictor(config):
 
         return predictor
 
+
 def create_vae(config):
     encoder_resnet = ResNet(BasicBlock, [2, 2, 2, 2], do_fc=False, in_channels=12, inner_kernel=3, first_kernel=7)
     latent_size = config["latent_size"]
@@ -118,19 +119,16 @@ def create_vae(config):
     return vae
 
 
-def load_pretrained(vae, args):
-    load_path = Path(args.load)
+def load_pretrained(vae, path, load_predictor):
+    """Load a previously trained model, and optionally ignore weights/bias for predictor"""
+    load_path = Path(path)
     state_dict = torch.load(load_path)
 
-    if len([k for k in state_dict.keys() if "predictor" in k]) > 0:
-        vae.load_state_dict(state_dict)
-    else:
-        with open(load_path.parent / "config.json", "r") as fp:
-            old_config = json.load(fp)
+    if not load_predictor:
+        state_dict = {k: v for k, v in state_dict.items() if "predictor" not in k}
 
-        initial_vae = create_vae(old_config)
-        vae = vae.from_vae(initial_vae)
-        del initial_vae
+    mismatch = vae.load_state_dict(state_dict, strict=False)
+    print(mismatch)
     return vae
 
 
@@ -140,6 +138,5 @@ if __name__ == "__main__":
     parser.add_argument("--prefix", type=str, help="Prefix for ECG .npy paths", default="")
     parser.add_argument("--out-dir", type=str, help="Output directory", default="./")
     parser.add_argument("--config", type=str, help="Config .json for training", default="./config.json")
-    parser.add_argument("--load", type=str, help="Optional path to a pre-trained model", default=None)
     args = parser.parse_args()
     main(args)
