@@ -185,7 +185,7 @@ class Trainer:
         mae = F.l1_loss(x, output).item()
         mse = F.mse_loss(x, output).item()
 
-        c_index = concordance_index(fu_time.cpu().numpy(), pred.squeeze().cpu().numpy(), censor_status.cpu().numpy())
+        c_index = concordance_index(fu_time.cpu().numpy(), -pred.squeeze().cpu().numpy(), censor_status.cpu().numpy())
 
         out_metrics = {
             'loss': loss.item(),
