@@ -36,6 +36,10 @@ def main(args):
 
     trainer = Trainer(vae, "vae", **config["trainer"])
 
+    if config["load"]["path"] is not None:
+        optimizer_state_dict = torch.load(config["load"]["path"])["optimizer"]
+        trainer.load_optimizer(optimizer_state_dict)
+
     train_dir = f"{str(savedir)}/{trainer.savedir}"
     Path(train_dir).mkdir(exist_ok=True)
     with open(f"{train_dir}/config.json", "w") as fp:
@@ -122,13 +126,15 @@ def create_vae(config):
 def load_pretrained(vae, path, load_predictor):
     """Load a previously trained model, and optionally ignore weights/bias for predictor"""
     load_path = Path(path)
-    state_dict = torch.load(load_path)
+    state = torch.load(load_path)
+    print(f"Loading model from epoch {state['epoch']}")
+    state_dict = state["state_dict"]
 
     if not load_predictor:
         state_dict = {k: v for k, v in state_dict.items() if "predictor" not in k}
 
     mismatch = vae.load_state_dict(state_dict, strict=False)
-    print(mismatch)
+    print("Missing keys:", mismatch)
     return vae
 
 

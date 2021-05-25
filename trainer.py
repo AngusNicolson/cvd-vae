@@ -145,7 +145,12 @@ class Trainer:
             writer.add_figure("example/train_mean", fig, epoch)
 
             if (epoch + 1) % 10 == 0:
-                torch.save(self.model.state_dict(), f"{savedir}/{self.model_name}_e{epoch}.pt")
+                state = {
+                    "epoch": epoch,
+                    "state_dict": self.model.state_dict(),
+                    "optimizer": self.optimizer.state_dict()
+                }
+                torch.save(state, f"{savedir}/{self.model_name}_e{epoch}.pt")
 
             t1 = time.time()
             if verbose == 1:
@@ -275,3 +280,6 @@ class Trainer:
             else:
                 weight = min(((1 + epoch - lag)/warmup)**4, 1.0)
         return weight
+
+    def load_optimizer(self, state_dict):
+        self.optimizer.load_state_dict(state_dict)
