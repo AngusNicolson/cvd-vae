@@ -4,6 +4,7 @@ from datetime import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
+from lifelines.utils import concordance_index
 
 import torch
 import torch.nn.functional as F
@@ -108,6 +109,7 @@ class Trainer:
             for k, v in loss_names.items():
                 writer.add_scalar(f"epoch_loss/{v}/val", test_metrics[k], epoch)
             writer.add_scalar("mae/val", test_metrics['mae'], epoch)
+            writer.add_scalar("c_index/val", test_metrics['c_index'], epoch)
 
             writer.add_histogram("activity", test_metrics["activity"], epoch)
             writer.add_scalar("activity/n", test_metrics["n_active"], epoch)
@@ -183,6 +185,8 @@ class Trainer:
         mae = F.l1_loss(x, output).item()
         mse = F.mse_loss(x, output).item()
 
+        c_index = concordance_index(fu_time.cpu().numpy(), pred.squeeze().cpu().numpy(), censor_status.cpu().numpy())
+
         out_metrics = {
             'loss': loss.item(),
             "recon_loss": recon_loss.item(),
@@ -194,7 +198,8 @@ class Trainer:
             "mae": mae,
             "mse": mse,
             "activity": activity,
-            "n_active": n_active
+            "n_active": n_active,
+            "c_index": c_index
         }
         return out_metrics
 
