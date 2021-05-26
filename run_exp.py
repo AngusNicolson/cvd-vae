@@ -86,7 +86,7 @@ def create_predictor(config):
             if act_label == "sigmoid":
                 act = nn.Sigmoid()
             elif act_label == "relu":
-                act = nn.Tanh()
+                act = nn.ReLU()
             elif act_label == "tanh":
                 act = nn.Tanh()
             else:
@@ -98,7 +98,12 @@ def create_predictor(config):
         layers = []
         for i in range(n_layers - 1):
             layers += [linears[i], activations[i]]
+            if config["predictor"]["activations"][i] == "relu":
+                nn.init.kaiming_normal_(layers[-2].weight, mode='fan_out', nonlinearity='relu')
+            else:
+                nn.init.xavier_uniform_(layers[-2].weight)
         layers.append(linears[-1])
+        nn.init.xavier_uniform_(layers[-1].weight)
 
         predictor = nn.Sequential(
             *layers
