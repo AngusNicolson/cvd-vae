@@ -151,8 +151,11 @@ def load_pretrained(vae, path, load_predictor):
     """Load a previously trained model, and optionally ignore weights/bias for predictor"""
     load_path = Path(path)
     state = torch.load(load_path)
-    print(f"Loading model from epoch {state['epoch']}")
-    state_dict = state["state_dict"]
+    if "epoch" in state.keys():
+        print(f"Loading model from epoch {state['epoch']}")
+        state_dict = state["state_dict"]
+    else:
+        state_dict = state
 
     if not load_predictor:
         state_dict = {k: v for k, v in state_dict.items() if "predictor" not in k}
