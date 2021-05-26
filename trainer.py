@@ -196,7 +196,10 @@ class Trainer:
         mae = F.l1_loss(x, output).item()
         mse = F.mse_loss(x, output).item()
 
-        c_index = concordance_index(fu_time.cpu().numpy(), -pred.squeeze().cpu().numpy(), censor_status.cpu().numpy())
+        if np.isnan(pred.cpu().numpy()).any():
+            c_index = np.nan
+        else:
+            c_index = concordance_index(fu_time.cpu().numpy(), -pred.squeeze().cpu().numpy(), censor_status.cpu().numpy())
 
         long_x = x.cpu().numpy().reshape((x.shape[0], x.shape[1]*x.shape[2]))
         long_out = output.cpu().numpy().reshape((x.shape[0], x.shape[1] * x.shape[2]))
