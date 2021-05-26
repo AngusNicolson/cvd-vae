@@ -12,7 +12,7 @@ import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from utils import device, sort_batch
+from cvd_vae.utils import device, sort_batch
 
 
 class Trainer:
