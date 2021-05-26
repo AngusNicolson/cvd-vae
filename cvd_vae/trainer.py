@@ -42,8 +42,11 @@ class Trainer:
 
         for epoch in range(num_epoch):
             t0 = time.time()
-            sampler = WeightedRandomSampler(np.array(train_dataset.dataset.weight)[train_dataset.indices], len(train_dataset))
-            dataloader = DataLoader(train_dataset, batch_size=self.batch_size, sampler=sampler, num_workers=3)
+            if epoch >= lag["supervised"]:
+                sampler = WeightedRandomSampler(np.array(train_dataset.dataset.weight)[train_dataset.indices], len(train_dataset))
+                dataloader = DataLoader(train_dataset, batch_size=self.batch_size, sampler=sampler, num_workers=3)
+            else:
+                dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=3)
             losses = []
             recon_losses = []
             kld_losses = []
