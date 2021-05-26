@@ -110,6 +110,8 @@ class Trainer:
                 writer.add_scalar(f"epoch_loss/{v}/val", test_metrics[k], epoch)
             writer.add_scalar("mae/val", test_metrics['mae'], epoch)
             writer.add_scalar("c_index/val", test_metrics['c_index'], epoch)
+            writer.add_scalar("cross_corr/val", test_metrics['mean_cross_corr'], epoch)
+            writer.add_histogram("cross_corr", test_metrics["cross_corr"], epoch)
 
             writer.add_histogram("activity", test_metrics["activity"], epoch)
             writer.add_scalar("activity/n", test_metrics["n_active"], epoch)
@@ -196,6 +198,15 @@ class Trainer:
 
         c_index = concordance_index(fu_time.cpu().numpy(), -pred.squeeze().cpu().numpy(), censor_status.cpu().numpy())
 
+        long_x = x.cpu().numpy().reshape((x.shape[0], x.shape[1]*x.shape[2]))
+        long_out = output.cpu().numpy().reshape((x.shape[0], x.shape[1] * x.shape[2]))
+        cross_corr = np.zeros(x.shape[0])
+        for i in range(x.shape[0]):
+            cross_corr[i] = np.correlate(long_x[i], long_out[i])
+
+        cross_corr = cross_corr/x.shape[2]
+        mean_cross_corr = np.mean(cross_corr)
+
         out_metrics = {
             'loss': loss.item(),
             "recon_loss": recon_loss.item(),
@@ -208,7 +219,9 @@ class Trainer:
             "mse": mse,
             "activity": activity,
             "n_active": n_active,
-            "c_index": c_index
+            "c_index": c_index,
+            "mean_cross_corr": mean_cross_corr,
+            "cross_corr": cross_corr
         }
         return out_metrics
 
