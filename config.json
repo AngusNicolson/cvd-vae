@@ -6,7 +6,8 @@
     "patience": 50,
     "reduce_lr": false,
     "c": 10,
-    "supervised_importance": 1
+    "supervised_importance": 1,
+    "save_freq": 25
   },
   "train": {
     "lag": {

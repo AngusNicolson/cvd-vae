@@ -16,7 +16,7 @@ from cvd_vae.utils import device, sort_batch
 
 
 class Trainer:
-    def __init__(self, model, model_name, batch_size, lr, c, supervised_importance, reduce_lr=True, patience=10):
+    def __init__(self, model, model_name, batch_size, lr, c, supervised_importance, reduce_lr=True, patience=10, save_freq=25):
         self.model = model
         self.model_name = model_name
         self.savedir = f"{model_name}-{datetime.now().strftime('%d-%H%M%S')}"
@@ -26,6 +26,7 @@ class Trainer:
         self.supervised_importance = supervised_importance
         self.reduce_lr = reduce_lr
         self.patience = patience
+        self.save_freq = save_freq
 
         self.optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4, amsgrad=False)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=patience, factor=0.1)
@@ -145,7 +146,7 @@ class Trainer:
             fig = self.plot_example(train_dataset, 2, True)
             writer.add_figure("example/train_mean", fig, epoch)
 
-            if (epoch + 1) % 10 == 0:
+            if (epoch + 1) % self.save_freq == 0:
                 state = {
                     "epoch": epoch,
                     "state_dict": self.model.state_dict(),
