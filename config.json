@@ -29,6 +29,7 @@
   },
   "epochs": 180,
   "ecg_size": 1024,
+  "crop": true,
   "latent_size": 16,
   "positive_ratio": 0.25,
   "load": {

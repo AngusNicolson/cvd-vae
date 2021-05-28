@@ -70,9 +70,14 @@ def sort_batch(batch, return_ind=False):
 
 
 def load_data(config, dataset_path, prefix=""):
-    transform = Compose([
-        Start(output_size=config["ecg_size"])
-    ])
+    if config["crop"]:
+        transform = Compose([
+            RandomCrop(output_size=config["ecg_size"])
+        ])
+    else:
+        transform = Compose([
+            Start(output_size=config["ecg_size"])
+        ])
     dataset = ECGDataset(dataset_path, prefix, transform=transform, positive_ratio=config["positive_ratio"])
     train_dataset, val_dataset = split_dataset(dataset)
     return train_dataset, val_dataset
