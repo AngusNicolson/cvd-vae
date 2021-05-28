@@ -238,7 +238,9 @@ class Trainer:
         supervised_loss = self._negative_log_likelihood(censor_status, y_hat)
         weighted_supervised_loss = supervised_loss * supervised_weight * self.supervised_importance
 
-        loss = reconstruction_loss
+        loss = torch.zeros_like(reconstruction_loss)
+        loss += reconstruction_loss
+
         if kld_weight != 0:
             loss += weighted_kld
         if supervised_weight != 0:
