@@ -261,7 +261,7 @@ class Trainer:
         log_risk = torch.log(torch.cumsum(hazard_ratio, dim=-1))
         uncensored_likelihood = risk - log_risk
         censored_likelihood = uncensored_likelihood * censor_status
-        neg_likelihood = -torch.sum(censored_likelihood)
+        neg_likelihood = -torch.mean(censored_likelihood)
         return neg_likelihood
 
     def plot_example(self, dataset, idx, mean=False):
