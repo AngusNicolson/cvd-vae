@@ -4,18 +4,19 @@ from datetime import datetime
 
 import numpy as np
 import matplotlib.pyplot as plt
+from lifelines.utils import concordance_index
 
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from utils import device
-from dataset import DataLoader
+from cvd_vae.utils import device, sort_batch
 
 
 class Trainer:
-    def __init__(self, model, model_name, batch_size, lr, c, supervised_importance, reduce_lr=True, patience=10):
+    def __init__(self, model, model_name, batch_size, lr, c, supervised_importance, reduce_lr=True, patience=10, save_freq=25):
         self.model = model
         self.model_name = model_name
         self.savedir = f"{model_name}-{datetime.now().strftime('%d-%H%M%S')}"
@@ -25,6 +26,7 @@ class Trainer:
         self.supervised_importance = supervised_importance
         self.reduce_lr = reduce_lr
         self.patience = patience
+        self.save_freq = save_freq
 
         self.optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4, amsgrad=False)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=patience, factor=0.1)
@@ -41,7 +43,11 @@ class Trainer:
 
         for epoch in range(num_epoch):
             t0 = time.time()
-            dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=3)
+            if epoch >= lag["supervised"]:
+                sampler = WeightedRandomSampler(np.array(train_dataset.dataset.weight)[train_dataset.indices], len(train_dataset))
+                dataloader = DataLoader(train_dataset, batch_size=self.batch_size, sampler=sampler, num_workers=3)
+            else:
+                dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=3)
             losses = []
             recon_losses = []
             kld_losses = []
@@ -53,9 +59,10 @@ class Trainer:
             supervised_weight = self.get_weight(epoch, lag["supervised"], warmup["supervised"])
 
             for sample in dataloader:
+                sample = sort_batch(sample)
                 x = sample["ecg"]
                 x = x.to(device)
-                y = sample["measures"]
+                y = sample["incident"]
                 y = y.to(device)
                 self.model.zero_grad()
                 output, y_output, latent, mean, log_var = self.model(x)
@@ -106,6 +113,9 @@ class Trainer:
             for k, v in loss_names.items():
                 writer.add_scalar(f"epoch_loss/{v}/val", test_metrics[k], epoch)
             writer.add_scalar("mae/val", test_metrics['mae'], epoch)
+            writer.add_scalar("c_index/val", test_metrics['c_index'], epoch)
+            writer.add_scalar("cross_corr/val", test_metrics['mean_cross_corr'], epoch)
+            writer.add_histogram("cross_corr", test_metrics["cross_corr"], epoch)
 
             writer.add_histogram("activity", test_metrics["activity"], epoch)
             writer.add_scalar("activity/n", test_metrics["n_active"], epoch)
@@ -121,8 +131,8 @@ class Trainer:
             writer.add_histogram("decoder.linear/weight", self.model.decoder.linear.weight, epoch)
             #writer.add_histogram("decoder.conv1/weight", self.model.decoder.conv1[1].weight, epoch)
             writer.add_histogram("decoder.conv2/weight", self.model.decoder.conv2[1].weight, epoch)
-            writer.add_histogram("predictor/bias", self.model.predictor.bias, epoch)
-            writer.add_histogram("predictor/weight", self.model.predictor.weight, epoch)
+            writer.add_histogram("predictor/bias", self.model.predictor[-1].bias, epoch)
+            writer.add_histogram("predictor/weight", self.model.predictor[-1].weight, epoch)
 
             fig = self.plot_example(val_dataset, 2)
             writer.add_figure("example/test", fig, epoch)
@@ -136,8 +146,13 @@ class Trainer:
             fig = self.plot_example(train_dataset, 2, True)
             writer.add_figure("example/train_mean", fig, epoch)
 
-            if (epoch + 1) % 10 == 0:
-                torch.save(self.model.state_dict(), f"{savedir}/{self.model_name}_e{epoch}.pt")
+            if (epoch + 1) % self.save_freq == 0:
+                state = {
+                    "epoch": epoch,
+                    "state_dict": self.model.state_dict(),
+                    "optimizer": self.optimizer.state_dict()
+                }
+                torch.save(state, f"{savedir}/{self.model_name}_e{epoch}.pt")
 
             t1 = time.time()
             if verbose == 1:
@@ -148,40 +163,52 @@ class Trainer:
         Do this by batches so that we don't blow up the memory. """
         n_outputs = 5
         outputs = [[] for i in range(n_outputs)]
-        xs = []
-        ys = []
+        inputs = {"ecg": [], "incident": [], "fu_time": []}
         dataloader = DataLoader(dataset, 64, False, num_workers=3)
         self.model.eval()
         with torch.no_grad():
             for sample in dataloader:  # do not shuffle here!
-                x = sample["ecg"]
-                y = sample["measures"]
-                x = x.to(device)
-                y = y.to(device)
-                out = self.model(x)
+                for k in inputs.keys():
+                    inputs[k].append(sample[k].to(device))
+                out = self.model(inputs["ecg"][-1])
                 for i in range(n_outputs):
                     outputs[i].append(out[i])
-                xs.append(x)
-                ys.append(y)
         self.model.train()
 
         outputs = [torch.cat(out_list) for out_list in outputs]
-        x = torch.cat(xs)
-        y = torch.cat(ys)
-        return [x, y, *outputs]
+        inputs = {k: torch.cat(v) for k, v in inputs.items()}
+        return inputs, outputs
 
     def evaluate_model(self, dataset, kld_weight=1.0, supervised_weight=1.0):
-
-        x, y, output, pred, latent, mean, log_var = self.forward_by_batches(dataset)
+        inputs, outputs = self.forward_by_batches(dataset)
+        # Sort tensors by fu_time
+        inputs, ind = sort_batch(inputs, return_ind=True)
+        outputs = [o[ind] for o in outputs]
+        output, pred, latent, mean, log_var = outputs
+        x, censor_status, fu_time = list(inputs.values())
 
         activity = np.diag(np.cov(mean.cpu().numpy().T))
         n_active = (activity > 0.01).sum()
 
         # scores
-        loss, recon_loss, kld_loss, weighted_kld, supervised_loss, weighted_supervised_loss = self.loss_fn(x, output, y, pred, mean, log_var, kld_weight, supervised_weight)
+        loss, recon_loss, kld_loss, weighted_kld, supervised_loss, weighted_supervised_loss = self.loss_fn(x, output, censor_status, pred, mean, log_var, kld_weight, supervised_weight)
 
         mae = F.l1_loss(x, output).item()
         mse = F.mse_loss(x, output).item()
+
+        if np.isnan(pred.cpu().numpy()).any():
+            c_index = np.nan
+        else:
+            c_index = concordance_index(fu_time.cpu().numpy(), -pred.squeeze().cpu().numpy(), censor_status.cpu().numpy())
+
+        long_x = x.cpu().numpy().reshape((x.shape[0], x.shape[1]*x.shape[2]))
+        long_out = output.cpu().numpy().reshape((x.shape[0], x.shape[1] * x.shape[2]))
+        cross_corr = np.zeros(x.shape[0])
+        for i in range(x.shape[0]):
+            cross_corr[i] = np.correlate(long_x[i], long_out[i])
+
+        cross_corr = cross_corr/x.shape[2]
+        mean_cross_corr = np.mean(cross_corr)
 
         out_metrics = {
             'loss': loss.item(),
@@ -194,20 +221,48 @@ class Trainer:
             "mae": mae,
             "mse": mse,
             "activity": activity,
-            "n_active": n_active
+            "n_active": n_active,
+            "c_index": c_index,
+            "mean_cross_corr": mean_cross_corr,
+            "cross_corr": cross_corr
         }
         return out_metrics
 
-    def loss_fn(self, x, x_hat, y, y_hat, mean, log_var, kld_weight=1.0, supervised_weight=1.0):
+    def loss_fn(self, x, x_hat, censor_status, y_hat, mean, log_var, kld_weight=1.0, supervised_weight=1.0):
         reconstruction_loss = F.mse_loss(x_hat, x, reduction='mean')
         kld = - self.c * 0.5 * torch.mean(1 + log_var - mean.pow(2) - log_var.exp())
         weighted_kld = kld * kld_weight
-        supervised_loss = F.mse_loss(y_hat, y, reduction="mean")
+        supervised_loss = self._negative_log_likelihood(censor_status, y_hat)
         weighted_supervised_loss = supervised_loss * supervised_weight * self.supervised_importance
 
-        loss = reconstruction_loss + weighted_kld + weighted_supervised_loss
+        loss = torch.zeros_like(reconstruction_loss)
+        loss += reconstruction_loss
+
+        if kld_weight != 0:
+            loss += weighted_kld
+        if supervised_weight != 0:
+            loss += weighted_supervised_loss
 
         return loss, reconstruction_loss, kld, weighted_kld, supervised_loss, weighted_supervised_loss
+
+    @staticmethod
+    def _negative_log_likelihood(censor_status, risk):
+        """
+        Define Cox PH partial likelihood function loss.
+
+        Taken from "https://github.com/UK-Digital-Heart-Project/4Dsurvival/blob/master/survival4D/nn.py"
+        Arguments: censor_status (censoring status) bool, risk (risk [log hazard ratio] predicted by network) for batch of input subjects
+        As defined, this function requires that all subjects in input batch must be sorted in descending order of
+        followup time
+        """
+        risk = risk.squeeze()
+        risk = torch.sigmoid(risk)
+        hazard_ratio = torch.exp(risk)
+        log_risk = torch.log(torch.cumsum(hazard_ratio, dim=-1))
+        uncensored_likelihood = risk - log_risk
+        censored_likelihood = uncensored_likelihood * censor_status
+        neg_likelihood = -torch.mean(censored_likelihood)
+        return neg_likelihood
 
     def plot_example(self, dataset, idx, mean=False):
         sample = dataset[idx]
@@ -243,3 +298,6 @@ class Trainer:
             else:
                 weight = min(((1 + epoch - lag)/warmup)**4, 1.0)
         return weight
+
+    def load_optimizer(self, state_dict):
+        self.optimizer.load_state_dict(state_dict)

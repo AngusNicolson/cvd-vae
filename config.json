@@ -6,7 +6,8 @@
     "patience": 50,
     "reduce_lr": false,
     "c": 10,
-    "supervised_importance": 30
+    "supervised_importance": 1,
+    "save_freq": 25
   },
   "train": {
     "lag": {
@@ -23,7 +24,17 @@
     "conv1_scale": 2,
     "conv2_scale": 4
   },
+  "predictor": {
+    "n": [32],
+    "activations": ["relu"]
+  },
   "epochs": 180,
   "ecg_size": 1024,
-  "latent_size": 16
+  "crop": true,
+  "latent_size": 16,
+  "positive_ratio": 0.25,
+  "load": {
+    "path": null,
+    "load_predictor": true
+  }
 }
